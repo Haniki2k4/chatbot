@@ -1,2 +1,5 @@
 "models/*.gguf" 
 "*.gguf" 
+"*.model" 
+"*.gguf" 
+"__pycache__/" 
