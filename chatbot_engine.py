@@ -65,9 +65,9 @@ def chunk_text(text, chunk_size=3):
 
 class DucGiangChatbot:
     def __init__(self, data_folder="duc_giang_txt", model_name="sentence-transformers/all-MiniLM-L6-v2", 
-                 llm_model_path="E:/NLP/het-mon/chatbot/models/qwen2.5-1.5b-instruct-q4_k_m.gguf", use_llm=False):
+                 llm_model_path="E:/NLP/het-mon/chatbot/models/qwen2.5-1.5b-instruct-q4_k_m.gguf", use_llm=True):
         """
-        Khởi tạo chatbot với BERT embeddings và LLM local (tùy chọn)
+        Khởi tạo chatbot với BERT embeddings và LLM local 
         
         Args:
             data_folder: Thư mục chứa các file txt đã crawl
@@ -78,7 +78,7 @@ class DucGiangChatbot:
         self.data_folder = data_folder
         self.model_name = model_name
         self.llm_model_path = llm_model_path
-        self.use_llm = True
+        self.use_llm = use_llm
         self.embedder = None
         self.llm = None
         self.chunks = []
