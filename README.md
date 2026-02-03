@@ -237,7 +237,7 @@ pip install llama-cpp-python
 
 ### 3. Lỗi: "Không có file txt"
 - Đặt dữ liệu vào `data/raw/duc_giang_txt/`
-- Hoặc chạy `python scripts/download_model.py`
+- Hoặc chạy `python scripts/crawler.py`
 
 ### 4. Xóa cache cũ
 ```bash
