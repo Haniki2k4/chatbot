@@ -156,7 +156,11 @@ body {
     border-radius: 12px;
     word-wrap: break-word;
     line-height: 1.5;
+}
+
+.message-content p {
     white-space: pre-wrap;
+    margin: 0;
 }
 
 /* Bot Message */
@@ -437,6 +441,7 @@ body {
 
     .send-btn span {
         display: none;
+        white-space: pre-wrap;
     }
 
     .send-btn .send-icon {

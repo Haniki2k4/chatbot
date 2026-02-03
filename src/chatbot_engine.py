@@ -10,6 +10,7 @@ Chatbot Engine với BERT Embedding, LLM Local và mô hình xác suất
 import os
 import logging
 import time as time_module
+import re
 from pathlib import Path
 import pickle
 import numpy as np
@@ -306,8 +307,14 @@ class DucGiangChatbot:
         """Sinh câu trả lời từ LLM"""
         if not self.llm:
             return None
-        
-        context_text = "\n- ".join(contexts)
+
+        cleaned_contexts = []
+        for ctx in contexts:
+            ctx_clean = re.sub(r"[\r\n]+", " ", str(ctx)).strip()
+            if ctx_clean:
+                cleaned_contexts.append(ctx_clean)
+
+        context_text = "\n- ".join(cleaned_contexts)
         prompt = f"""<|im_start|>system
 Bạn là trợ lý ảo của Bệnh viện Đức Giang.
     Ưu tiên trả lời ngắn gọn nhưng đầy đủ ý. Khi cần, có thể trả lời dài để đủ thông tin.
@@ -329,10 +336,12 @@ Câu hỏi: {query}
                 max_tokens=LLM_CONFIG.get("max_tokens", 200),
                 temperature=LLM_CONFIG.get("temperature", 0.3),
                 top_p=LLM_CONFIG.get("top_p", 0.9),
-                stop=["<|im_end|>", "\n\n"],
+                stop=["<|im_end|>"],
                 echo=False
             )
             response = output["choices"][0]["text"].strip()
+            response = "\n".join(line.rstrip() for line in response.split("\n"))
+            response = re.sub(r"\n{2,}", "\n", response).strip()
             return response if response else None
         except Exception as e:
             logger.warning(f"Lỗi khi sinh câu trả lời từ LLM: {e}")

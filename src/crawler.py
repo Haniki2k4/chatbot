@@ -295,16 +295,6 @@ def load_texts(folder):
     return texts
 
 
-def save_chunks_to_file(chunks, output_file="duc_giang_chunks.txt"):
-    """Lưu các chunks vào file để tham khảo"""
-    # Ghi từng chunk ra file để kiểm tra
-    with open(output_file, "w", encoding="utf-8") as f:
-        for i, chunk in enumerate(chunks, 1):
-            f.write(f"Chunk {i}:\n")
-            f.write(chunk + "\n\n")  # chunk đã là string
-    print(f"\n Đã lưu chunks vào: {output_file}")
-
-
 def verify_data():
     """Kiểm tra số lượng file crawled"""
     # Kiểm tra thư mục dữ liệu

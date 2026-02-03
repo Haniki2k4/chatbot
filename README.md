@@ -4,12 +4,14 @@
 
 ## 📋 Mục lục
 
-- [Tính năng](#tính-năng)
-- [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
-- [Cài đặt](#cài-đặt)
-- [Sử dụng](#sử-dụng)
-- [Cấu trúc dự án](#cấu-trúc-dự-án)
-- [API Documentation](#api-documentation)
+- [Tính năng](#-tính-năng)
+- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
+- [Cài đặt](#-cài-đặt)
+- [Sử dụng](#-sử-dụng)
+- [Cấu trúc dự án](#-cấu-trúc-dự-án)
+- [API Documentation](#-api-documentation)
+- [Cấu hình](#-cấu-hình-configsettingspy)
+- [Troubleshooting](#️-troubleshooting)
 
 ## ✨ Tính năng
 
