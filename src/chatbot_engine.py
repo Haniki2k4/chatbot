@@ -1,252 +1,316 @@
+# -*- coding: utf-8 -*-
 """
-Core chatbot engine with BERT Embedding and LLM support
+Chatbot Engine với BERT Embedding, LLM Local và mô hình xác suất
+- Tiền xử lý (preprocessing)
+- Chunking (tách nhỏ documents)
+- Embedding và semantic search
+- LLM Local cho tạo câu trả lời
 """
 
 import os
-import re
-import time
-import numpy as np
+import logging
+import time as time_module
 from pathlib import Path
+import pickle
+import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-import pickle
-import logging
 
-# Optional LLM support
+from .utils import (
+    preprocess_text, split_sentences, chunk_text,
+    tokenize_for_match, normalize_display, 
+    calculate_probability_score, ensure_directory_exists
+)
+from config.settings import CHATBOT_CONFIG, LLM_CONFIG, PREPROCESS_VERSION
+
+
+logger = logging.getLogger(__name__)
+
+# Import LLM local (optional)
 try:
     from llama_cpp import Llama
     HAS_LLM = True
 except ImportError:
     HAS_LLM = False
+    logger.warning("llama-cpp-python chưa được cài đặt. Chatbot sẽ chỉ dùng BERT embeddings.")
 
-logger = logging.getLogger(__name__)
-
-
-# ==================== PREPROCESSING & CHUNKING ====================
-
-def preprocess_text(text):
-    """Normalize text: lowercase, remove HTML/URL/email, special chars"""
-    text = text.lower()
-    text = re.sub(r"\n+", " ", text)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"http\S+", "", text)
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"\S+@\S+", "", text)
-    text = re.sub(r"(?<=\d)\.(?=\d)", "", text)
-    text = re.sub(r"[^\w\sÀ-ỹ]", " ", text)
-    return text.strip()
-
-
-def split_sentences(text):
-    """Split text into sentences using punctuation marks"""
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"http\S+", " ", text)
-    text = re.sub(r"\S+@\S+", " ", text)
-    text = re.sub(r"[\r\n]+", ". ", text)
-    text = re.sub(r"\s+", " ", text)
-    sentences = [s.strip() for s in re.split(r"[\.\!\?]+", text) if s.strip()]
-    return sentences
-
-
-def chunk_text(text, chunk_size=3):
-    """Group sentences into chunks"""
-    sentences = split_sentences(text)
-    chunks = []
-    for i in range(0, len(sentences), chunk_size):
-        chunk = ". ".join(sentences[i:i+chunk_size])
-        if chunk:
-            chunks.append(chunk)
-    return chunks
-
-
-# ==================== CHATBOT ENGINE ====================
 
 class DucGiangChatbot:
-    """Vietnamese hospital chatbot with RAG and LLM support"""
+    """Chatbot Engine cho Bệnh viện Đức Giang"""
     
     def __init__(self, config=None):
         """
-        Initialize chatbot with configuration
+        Khởi tạo chatbot với cấu hình
         
         Args:
-            config: Configuration object with all settings
+            config: Dictionary cấu hình (nếu None, dùng mặc định từ settings)
         """
-        if config is None:
-            from config import get_config
-            config = get_config()
-        
-        self.config = config
+        self.config = config or CHATBOT_CONFIG.copy()
         self.embedder = None
         self.llm = None
         self.chunks = []
         self.chunk_clean = []
         self.chunk_embeddings = None
+        self.cache_file = self.config.get("cache_file")
         
-        logger.info("🔄 Initializing chatbot...")
+        logger.info("Đang khởi tạo chatbot...")
         self._initialize()
-        
-        if self.config.USE_LLM:
-            self._initialize_llm()
-        
-        logger.info("✅ Chatbot ready!")
+        self._initialize_llm()
+        logger.info("Chatbot đã sẵn sàng.")
     
     def _initialize_llm(self):
-        """Initialize LLM model"""
+        """Khởi tạo LLM local"""
+        use_llm = bool(self.config.get("use_llm", True))
+        if not use_llm:
+            logger.info("Chạy chế độ không dùng LLM (BERT embeddings only)")
+            self.llm = None
+            return
+
         if not HAS_LLM:
-            logger.warning("⚠️  llama-cpp-python not installed")
+            logger.warning("llama-cpp-python chưa được cài đặt. Tắt LLM và dùng BERT embeddings.")
+            self.llm = None
+            self.config["use_llm"] = False
             return
         
-        llm_path = self.config.LLM_MODEL_PATH
-        if not Path(llm_path).exists():
-            logger.error(f"❌ LLM model not found: {llm_path}")
+        llm_path = self.config.get("llm_model_path")
+        if not llm_path or not os.path.exists(llm_path):
+            logger.warning(f"Không tìm thấy model LLM tại: {llm_path}. Tắt LLM và dùng BERT embeddings.")
+            self.llm = None
+            self.config["use_llm"] = False
             return
         
         try:
-            logger.info(f"🤖 Loading LLM: {llm_path}")
+            logger.info(f"Đang load LLM từ: {llm_path}")
             self.llm = Llama(
-                model_path=str(llm_path),
-                n_ctx=self.config.LLM_N_CTX,
-                n_threads=self.config.LLM_N_THREADS,
-                n_batch=self.config.LLM_N_BATCH,
-                verbose=False
+                model_path=llm_path,
+                **{k: v for k, v in LLM_CONFIG.items() if k not in ['temperature', 'top_p', 'max_tokens']}
             )
-            logger.info("✅ LLM loaded!")
+            logger.info("LLM đã sẵn sàng.")
         except Exception as e:
-            logger.error(f"❌ Error loading LLM: {e}")
+            raise RuntimeError(f"Lỗi khi load LLM: {e}")
     
     def _initialize(self):
-        """Initialize embedding model and load data"""
-        logger.info(f"📥 Loading model: {self.config.EMBEDDING_MODEL}")
-        self.embedder = SentenceTransformer(self.config.EMBEDDING_MODEL)
+        """Khởi tạo model và load dữ liệu"""
+        # Nạp model embedding
+        model_name = self.config.get("embedding_model")
+        logger.info(f"Đang load model: {model_name}")
+        self.embedder = SentenceTransformer(model_name)
         
-        # Check cache
-        if self.config.CACHE_FILE.exists():
-            logger.info("📂 Loading from cache...")
+        # Kiểm tra cache
+        if os.path.exists(self.cache_file):
+            logger.info("Tìm thấy cache, đang load...")
             self._load_cache()
         else:
-            logger.info("🔨 Building index...")
+            logger.info("Không tìm thấy cache, đang xây dựng index...")
             self._build_index()
             self._save_cache()
     
     def _load_texts(self):
-        """Load all text files from documents directory"""
+        """Đọc tất cả file txt từ thư mục"""
         texts = []
-        docs_path = Path(self.config.DOCUMENTS_DIR)
+        data_path = Path(self.config.get("data_folder"))
         
-        if not docs_path.exists():
-            logger.warning(f"⚠️  Documents directory not found: {docs_path}")
-            return texts
+        if not data_path.exists():
+            raise FileNotFoundError(f"Không tìm thấy thư mục: {data_path}")
         
-        txt_files = list(docs_path.glob("*.txt"))
+        txt_files = list(data_path.glob("*.txt"))
         if not txt_files:
-            logger.warning(f"⚠️  No text files in: {docs_path}")
-            return texts
+            raise FileNotFoundError(f"Không có file txt trong thư mục: {data_path}")
         
-        for filepath in txt_files:
-            try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    if content.strip():
-                        texts.append(content)
-            except Exception as e:
-                logger.error(f"Error reading {filepath}: {e}")
+        for filepath in sorted(txt_files):
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+                if content.strip():
+                    texts.append(content)
         
-        logger.info(f"📖 Loaded {len(texts)} documents")
+        logger.info(f"Đã load {len(texts)} file txt")
         return texts
     
     def _build_index(self):
-        """Build embedding index from documents"""
+        """Xây dựng index từ dữ liệu"""
         docs = self._load_texts()
         
         all_chunks = []
         all_chunk_clean = []
         total_sentences = 0
+        chunk_size = self.config.get("chunk_size", 3)
         
         for doc in docs:
             sentences = split_sentences(doc)
             total_sentences += len(sentences)
-            chunks = chunk_text(doc, chunk_size=self.config.CHUNK_SIZE)
-            
+            chunks = chunk_text(doc, chunk_size=chunk_size)
             for ch in chunks:
-                all_chunks.append(self._normalize_display(ch))
+                all_chunks.append(normalize_display(ch))
                 all_chunk_clean.append(preprocess_text(ch))
         
         self.chunks = all_chunks
         self.chunk_clean = all_chunk_clean
+        logger.info(f"Tổng số câu: {total_sentences}")
+        logger.info(f"Đã tạo {len(self.chunks)} chunks")
         
-        logger.info(f"📝 Total sentences: {total_sentences}")
-        logger.info(f"✂️ Created {len(self.chunks)} chunks")
-        
-        # Create embeddings
-        logger.info("🧮 Creating embeddings...")
+        # Tạo embeddings
+        logger.info("Đang tạo embeddings...")
         self.chunk_embeddings = self.embedder.encode(
             self.chunk_clean,
             convert_to_numpy=True,
             normalize_embeddings=True,
             show_progress_bar=True
         )
-        logger.info(f"✅ Embeddings shape: {self.chunk_embeddings.shape}")
+        logger.info(f"Đã tạo embeddings: {self.chunk_embeddings.shape}")
     
     def _save_cache(self):
-        """Save cache for faster loading"""
-        self.config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        """Lưu cache để tăng tốc lần sau"""
+        ensure_directory_exists(os.path.dirname(self.cache_file))
         cache_data = {
             "chunks": self.chunks,
             "chunk_clean": self.chunk_clean,
             "embeddings": self.chunk_embeddings,
-            "preprocess_version": self.config.PREPROCESS_VERSION
+            "preprocess_version": PREPROCESS_VERSION
         }
-        with open(self.config.CACHE_FILE, "wb") as f:
+        with open(self.cache_file, "wb") as f:
             pickle.dump(cache_data, f)
-        logger.info(f"💾 Cache saved to {self.config.CACHE_FILE}")
+        logger.info(f"Đã lưu cache vào {self.cache_file}")
     
     def _load_cache(self):
-        """Load cached embeddings"""
-        try:
-            with open(self.config.CACHE_FILE, "rb") as f:
-                cache_data = pickle.load(f)
-            
-            if cache_data.get("preprocess_version") != self.config.PREPROCESS_VERSION:
-                logger.info("♻️  Cache outdated, rebuilding...")
-                self._build_index()
-                self._save_cache()
-                return
-            
-            self.chunks = cache_data["chunks"]
-            self.chunk_clean = cache_data.get("chunk_clean", [])
-            self.chunk_embeddings = cache_data["embeddings"]
-            logger.info(f"✅ Loaded {len(self.chunks)} chunks from cache")
-        except Exception as e:
-            logger.error(f"Error loading cache: {e}")
+        """Load cache đã lưu"""
+        with open(self.cache_file, "rb") as f:
+            cache_data = pickle.load(f)
+        
+        if cache_data.get("preprocess_version") != PREPROCESS_VERSION:
+            logger.warning("Cache cũ không còn phù hợp, đang xây dựng lại index...")
             self._build_index()
             self._save_cache()
+            return
+        
+        self.chunks = cache_data["chunks"]
+        self.chunk_clean = cache_data.get("chunk_clean", [])
+        self.chunk_embeddings = cache_data["embeddings"]
+        logger.info(f"Đã load {len(self.chunks)} chunks từ cache")
     
-    def _tokenize_for_match(self, text):
-        """Tokenize text for keyword matching"""
-        return re.findall(r"[\wÀ-ỹ]+", text.lower())
+    def get_response(self, user_query, top_k=None, return_scores=False):
+        """
+        Lấy câu trả lời cho câu hỏi của user
+        
+        Args:
+            user_query: Câu hỏi từ người dùng
+            top_k: Số lượng chunks tốt nhất cần lấy (mặc định từ config)
+            return_scores: Có trả về scores không
+        
+        Returns:
+            Câu trả lời hoặc (câu trả lời, scores, inference_time)
+        """
+        inference_start_time = time_module.time()
+        
+        if not user_query.strip():
+            return "Vui lòng nhập câu hỏi."
+        
+        top_k = top_k or self.config.get("top_k", 5)
+        threshold = self.config.get("similarity_threshold", 0.3)
+        
+        # Chuẩn hóa query
+        query_clean = preprocess_text(user_query)
+        
+        # Tạo embedding cho query
+        query_embedding = self.embedder.encode(
+            query_clean,
+            convert_to_numpy=True,
+            normalize_embeddings=True
+        )
+        
+        # Tính cosine similarity
+        similarities = cosine_similarity([query_embedding], self.chunk_embeddings)[0]
+        
+        # Tính overlap score
+        query_tokens = set(tokenize_for_match(query_clean))
+        overlap_scores = np.zeros_like(similarities)
+        if query_tokens:
+            for i, ch in enumerate(self.chunk_clean):
+                ch_tokens = set(tokenize_for_match(ch))
+                if ch_tokens:
+                    overlap_scores[i] = len(query_tokens & ch_tokens) / max(len(query_tokens), 1)
+        
+        # Combined score
+        combined_scores = 0.85 * similarities + 0.15 * overlap_scores
+        
+        # Lọc theo threshold
+        valid_indices = np.where(combined_scores >= threshold)[0]
+        
+        if len(valid_indices) == 0:
+            inference_time = time_module.time() - inference_start_time
+            response = "Xin lỗi, tôi không tìm thấy thông tin phù hợp trong cơ sở dữ liệu. Bạn có thể hỏi về thông tin liên quan đến Bệnh viện Đức Giang."
+            if return_scores:
+                return response, [], inference_time
+            return response
+        
+        # Lấy top_k best matches
+        valid_scores = combined_scores[valid_indices]
+        if len(valid_scores) > 0:
+            top_valid_idx = valid_scores.argsort()[-top_k:][::-1]
+            top_indices = valid_indices[top_valid_idx]
+        else:
+            top_indices = combined_scores.argsort()[-top_k:][::-1]
+        
+        # Tính xác suất
+        top_scores = combined_scores[top_indices]
+        probabilities = calculate_probability_score(top_scores)
+        
+        # Lấy responses và scores
+        responses = []
+        scores_info = []
+        
+        for idx, (chunk_idx, prob) in enumerate(zip(top_indices, probabilities)):
+            if combined_scores[chunk_idx] >= threshold:
+                responses.append(self.chunks[chunk_idx])
+                scores_info.append({
+                    "rank": idx + 1,
+                    "similarity": float(combined_scores[chunk_idx]),
+                    "probability": float(prob),
+                    "text": self.chunks[chunk_idx]
+                })
+        
+        # Xóa trùng lặp
+        unique_responses = []
+        seen = set()
+        for resp in responses:
+            resp_lower = resp.lower()
+            if resp_lower not in seen:
+                unique_responses.append(resp)
+                seen.add(resp_lower)
+        
+        # Sinh câu trả lời
+        if self.llm and unique_responses:
+            max_contexts = int(self.config.get("max_contexts", 2))
+            final_response = self._generate_llm_response(user_query, unique_responses[:max_contexts])
+            if not final_response:
+                final_response = self._combine_responses(unique_responses)
+        else:
+            final_response = self._combine_responses(unique_responses) if unique_responses else "Xin lỗi, tôi không tìm thấy thông tin phù hợp."
+        
+        inference_time = time_module.time() - inference_start_time
+        
+        if return_scores:
+            return final_response, scores_info, inference_time
+        return final_response
     
-    def _normalize_display(self, text):
-        """Normalize text for display"""
-        text = re.sub(r"\s*-\s*", " ", text)
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
-    
-    def _calculate_probability_score(self, similarity_scores):
-        """Calculate probability using softmax"""
-        exp_scores = np.exp(similarity_scores - np.max(similarity_scores))
-        probabilities = exp_scores / exp_scores.sum()
-        return probabilities
+    def _combine_responses(self, responses):
+        """Kết hợp các responses thành câu trả lời"""
+        best_chunk = responses[0]
+        extra_chunk = responses[1] if len(responses) > 1 else ""
+        combined = best_chunk + (". " + extra_chunk if extra_chunk else "")
+        combined = combined.replace(r"\s+", " ").strip()
+        if not combined.endswith(('.', '!', '?')):
+            combined += "."
+        return f"Dựa trên thông tin tìm được, {combined}"
     
     def _generate_llm_response(self, query, contexts):
-        """Generate response using LLM"""
-        if not self.config.USE_LLM or not self.llm:
+        """Sinh câu trả lời từ LLM"""
+        if not self.llm:
             return None
         
         context_text = "\n- ".join(contexts)
-        
         prompt = f"""<|im_start|>system
 Bạn là trợ lý ảo của Bệnh viện Đức Giang.
-Trả lời ngắn gọn, tự nhiên, đúng trọng tâm.
+    Ưu tiên trả lời ngắn gọn nhưng đầy đủ ý. Khi cần, có thể trả lời dài để đủ thông tin.
 Chỉ dùng thông tin trong ngữ cảnh. Nếu không đủ thông tin, nói rõ là chưa tìm thấy.
 Ưu tiên tiếng Việt, tránh suy đoán.
 <|im_end|>
@@ -262,142 +326,46 @@ Câu hỏi: {query}
         try:
             output = self.llm(
                 prompt,
-                max_tokens=200,
-                temperature=0.3,
-                top_p=0.9,
+                max_tokens=LLM_CONFIG.get("max_tokens", 200),
+                temperature=LLM_CONFIG.get("temperature", 0.3),
+                top_p=LLM_CONFIG.get("top_p", 0.9),
                 stop=["<|im_end|>", "\n\n"],
                 echo=False
             )
             response = output["choices"][0]["text"].strip()
             return response if response else None
         except Exception as e:
-            logger.error(f"⚠️  LLM error: {e}")
+            logger.warning(f"Lỗi khi sinh câu trả lời từ LLM: {e}")
             return None
     
-    def get_response(self, user_query, top_k=None, return_scores=False):
-        """
-        Get chatbot response to user query
-        
-        Args:
-            user_query: User question
-            top_k: Number of top results (default from config)
-            return_scores: Return confidence scores
-        
-        Returns:
-            Response or (response, scores, inference_time)
-        """
-        inference_start = time.time()
-        
-        if top_k is None:
-            top_k = self.config.TOP_K
-        
-        if not user_query.strip():
-            return "Vui lòng nhập câu hỏi."
-        
-        # Preprocess query
-        query_clean = preprocess_text(user_query)
-        
-        # Create embedding
-        query_embedding = self.embedder.encode(
-            query_clean,
-            convert_to_numpy=True,
-            normalize_embeddings=True
-        )
-        
-        # Calculate similarity
-        similarities = cosine_similarity([query_embedding], self.chunk_embeddings)[0]
-        
-        # Keyword overlap score
-        query_tokens = set(self._tokenize_for_match(query_clean))
-        overlap_scores = np.zeros_like(similarities)
-        
-        if query_tokens:
-            for i, ch in enumerate(self.chunk_clean):
-                ch_tokens = set(self._tokenize_for_match(ch))
-                if ch_tokens:
-                    overlap_scores[i] = len(query_tokens & ch_tokens) / max(len(query_tokens), 1)
-        
-        # Combined scoring
-        combined_scores = 0.85 * similarities + 0.15 * overlap_scores
-        threshold = self.config.SIMILARITY_THRESHOLD
-        
-        # Filter by threshold
-        valid_indices = np.where(combined_scores >= threshold)[0]
-        
-        if len(valid_indices) == 0:
-            inference_time = time.time() - inference_start
-            response = "Xin lỗi, tôi không tìm thấy thông tin phù hợp."
-            if return_scores:
-                return response, [], inference_time
-            return response
-        
-        # Get top-k results
-        valid_scores = combined_scores[valid_indices]
-        top_valid_idx = valid_scores.argsort()[-top_k:][::-1]
-        top_indices = valid_indices[top_valid_idx]
-        
-        # Calculate probabilities
-        top_scores = combined_scores[top_indices]
-        probabilities = self._calculate_probability_score(top_scores)
-        
-        # Prepare responses
-        responses = []
-        scores_info = []
-        
-        for idx, (chunk_idx, prob) in enumerate(zip(top_indices, probabilities)):
-            if combined_scores[chunk_idx] >= threshold:
-                responses.append(self.chunks[chunk_idx])
-                scores_info.append({
-                    "rank": idx + 1,
-                    "similarity": float(combined_scores[chunk_idx]),
-                    "probability": float(prob),
-                    "text": self.chunks[chunk_idx]
-                })
-        
-        # Remove duplicates
-        unique_responses = []
-        seen = set()
-        for resp in responses:
-            resp_lower = resp.lower()
-            if resp_lower not in seen:
-                unique_responses.append(resp)
-                seen.add(resp_lower)
-        
-        # Generate response using LLM if available
-        if self.config.USE_LLM and unique_responses and self.llm:
-            llm_response = self._generate_llm_response(user_query, unique_responses[:2])
-            
-            if llm_response:
-                final_response = llm_response
-            else:
-                best_chunk = unique_responses[0]
-                extra = unique_responses[1] if len(unique_responses) > 1 else ""
-                final_response = best_chunk + (". " + extra if extra else "")
-        else:
-            if unique_responses:
-                best_chunk = unique_responses[0]
-                extra = unique_responses[1] if len(unique_responses) > 1 else ""
-                final_response = best_chunk + (". " + extra if extra else "")
-                final_response = re.sub(r"\s+", " ", final_response).strip()
-                if not final_response.endswith(('.', '!', '?')):
-                    final_response += "."
-                final_response = f"Dựa trên thông tin: {final_response}"
-            else:
-                final_response = "Xin lỗi, không tìm thấy thông tin phù hợp."
-        
-        inference_time = time.time() - inference_start
-        
-        if return_scores:
-            return final_response, scores_info, inference_time
-        
-        return final_response
-    
     def get_stats(self):
-        """Get chatbot statistics"""
+        """Lấy thống kê về chatbot"""
         return {
             "total_chunks": len(self.chunks),
             "embedding_dim": self.chunk_embeddings.shape[1] if self.chunk_embeddings is not None else 0,
-            "model": self.config.EMBEDDING_MODEL,
-            "llm_enabled": self.config.USE_LLM and self.llm is not None,
-            "llm_model": str(self.config.LLM_MODEL_PATH) if self.config.USE_LLM else None
+            "model": self.config.get("embedding_model"),
+            "llm_enabled": self.llm is not None,
+            "llm_model": self.config.get("llm_model_path") if self.llm else None
         }
+
+
+if __name__ == "__main__":
+    import sys
+    sys.stdout.reconfigure(encoding='utf-8')
+    
+    bot = DucGiangChatbot()
+    print("\n" + "="*50)
+    print("CHATBOT BỆNH VIỆN ĐỨC GIANG")
+    print("="*50)
+    print("Gõ 'exit' hoặc 'quit' để thoát\n")
+    
+    while True:
+        user_input = input("Bạn: ").strip()
+        if user_input.lower() in ["exit", "quit", "bye", "thoát"]:
+            print("Bot: Cảm ơn bạn! Tạm biệt!")
+            break
+        if not user_input:
+            continue
+        
+        response, scores, inference_time = bot.get_response(user_input, return_scores=True)
+        print(f"Bot: {response}\nThời gian suy luận: {inference_time:.2f}s\n")

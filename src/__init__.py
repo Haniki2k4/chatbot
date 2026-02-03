@@ -1,8 +1,6 @@
-"""
-Chatbot source code package
-"""
+# -*- coding: utf-8 -*-
+"""Chatbot source code module"""
 
-from .chatbot_engine import DucGiangChatbot, preprocess_text, chunk_text
+from .chatbot_engine import DucGiangChatbot
 
-__version__ = "0.1.12"
-__all__ = ["DucGiangChatbot", "preprocess_text", "chunk_text"]
+__all__ = ["DucGiangChatbot"]

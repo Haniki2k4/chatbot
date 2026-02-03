@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏥 Chatbot Bệnh viện Đức Giang</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=0.2">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-content">
+                <h1>🏥 Bệnh viện Đức Giang</h1>
+                <p class="subtitle">Trợ lý ảo - Hỏi đáp thông tin bệnh viện</p>
+            </div>
+            <div class="stats" id="stats">
+                <span class="stat-item">📚 <span id="chunk-count">0</span> chunks</span>
+                <span class="stat-item">🤖 BERT + <span id="llm-status">No LLM</span></span>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container">
+            <!-- Chat Messages -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="message bot-message">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <p>Xin chào! 👋 Tôi là trợ lý ảo của Bệnh viện Đức Giang.</p>
+                        <p>Bạn có thể hỏi tôi bất kỳ câu hỏi nào về bệnh viện, các dịch vụ, hoặc thông tin liên hệ.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <div class="input-wrapper">
+                    <input 
+                        type="text" 
+                        id="userInput" 
+                        placeholder="Gõ câu hỏi của bạn..."
+                        onkeypress="handleKeyPress(event)"
+                    >
+                    <button onclick="sendMessage()" class="send-btn">
+                        <span>Gửi</span>
+                        <span class="send-icon">→</span>
+                    </button>
+                </div>
+                <div class="info-text">
+                    Nhấn Enter hoặc click Gửi để gửi câu hỏi
+                </div>
+            </div>
+        </div>
+
+        <!-- Debug Panel (collapsible) -->
+        <div class="debug-panel">
+            <div class="debug-header" onclick="toggleDebug()">
+                <span>📊 Thông tin chi tiết</span>
+                <span id="debugToggle">▼</span>
+            </div>
+            <div class="debug-content" id="debugContent" style="display: none;">
+                <div id="debugInfo"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div class="loading-indicator" id="loadingIndicator" style="display: none;">
+        <div class="loading-box">
+            <div class="spinner"></div>
+            <p>Đang suy luận<span class="dot-animation">.</span><span class="dot-animation">.</span><span class="dot-animation">.</span></p>
+        </div>
+    </div>
+
+    <script>
+        // ==================== Utils ====================
+        
+        function showLoading(show = true) {
+            const indicator = document.getElementById('loadingIndicator');
+            if (show) {
+                indicator.style.display = 'flex';
+            } else {
+                indicator.style.display = 'none';
+            }
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function toggleDebug() {
+            const content = document.getElementById('debugContent');
+            const toggle = document.getElementById('debugToggle');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                toggle.textContent = '▲';
+            } else {
+                content.style.display = 'none';
+                toggle.textContent = '▼';
+            }
+        }
+
+        // ==================== Chat Functions ====================
+
+        function addMessage(text, isBot = false, scores = null) {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = isBot ? 'message bot-message' : 'message user-message';
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = isBot ? '🤖' : '👤';
+            
+            const content = document.createElement('div');
+            content.className = 'message-content';
+            
+            const textP = document.createElement('p');
+            textP.textContent = text;
+            content.appendChild(textP);
+            
+            // Thêm thông tin scores nếu có
+            if (scores && scores.length > 0) {
+                const scoresDiv = document.createElement('div');
+                scoresDiv.className = 'scores-info';
+                scoresDiv.innerHTML = '<strong>📊 Độ tin cậy:</strong><br>';
+                
+                scores.slice(0, 2).forEach((score, idx) => {
+                    const scoreItem = document.createElement('div');
+                    scoreItem.className = 'score-item';
+                    const similarity = (score.similarity * 100).toFixed(1);
+                    const probability = (score.probability * 100).toFixed(1);
+                    scoreItem.innerHTML = `
+                        <span>Kết quả ${idx + 1}:</span>
+                        <span>Similarity: <strong>${similarity}%</strong></span>
+                        <span>Probability: <strong>${probability}%</strong></span>
+                    `;
+                    scoresDiv.appendChild(scoreItem);
+                });
+                content.appendChild(scoresDiv);
+            }
+            
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(content);
+            messagesDiv.appendChild(messageDiv);
+            
+            // Auto scroll to bottom
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateDebugInfo(data) {
+            const debugInfo = document.getElementById('debugInfo');
+            const responseTime = data.time ? (data.time * 1000).toFixed(0) : 'N/A';
+            const inferenceTime = data.inference_time ? (data.inference_time * 1000).toFixed(0) : 'N/A';
+            
+            debugInfo.innerHTML = `
+                <div class="debug-item">
+                    <strong>⏱️ Thời gian suy luận:</strong> ${inferenceTime}ms
+                </div>
+                <div class="debug-item">
+                    <strong>⏱️ Thời gian xử lý tổng:</strong> ${responseTime}ms
+                </div>
+                <div class="debug-item">
+                    <strong>📝 Query Preprocessed:</strong> ${data.query_processed || 'N/A'}
+                </div>
+                <div class="debug-item">
+                    <strong>🔍 Top Matches:</strong> ${data.scores ? data.scores.length : 0}
+                </div>
+                ${data.scores ? data.scores.slice(0, 3).map((s, i) => `
+                    <div class="score-detail">
+                        <strong>Match ${i + 1}:</strong><br>
+                        Similarity: ${(s.similarity * 100).toFixed(1)}% | 
+                        Probability: ${(s.probability * 100).toFixed(1)}%
+                    </div>
+                `).join('') : ''}
+            `;
+        }
+
+        async function sendMessage() {
+            const userInput = document.getElementById('userInput');
+            const message = userInput.value.trim();
+            
+            if (!message) return;
+            
+            // Add user message
+            addMessage(message, false);
+            userInput.value = '';
+            
+            showLoading(true);
+            
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        top_k: 3
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Add bot response
+                    addMessage(data.response, true, data.scores);
+                    
+                    // Update debug info
+                    updateDebugInfo(data);
+                } else {
+                    addMessage('❌ Lỗi: ' + (data.error || 'Không thể kết nối'), true);
+                }
+            } catch (error) {
+                addMessage('❌ Lỗi kết nối: ' + error.message, true);
+            } finally {
+                showLoading(false);
+                userInput.focus();
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // ==================== Initialize ====================
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                document.getElementById('chunk-count').textContent = data.total_chunks.toLocaleString();
+                
+                const llmStatus = data.llm_enabled ? '✅ LLM Enabled' : '❌ BERT Only';
+                document.getElementById('llm-status').textContent = llmStatus;
+            } catch (error) {
+                console.error('Lỗi khi load stats:', error);
+            }
+        }
+
+        // Load stats on page load
+        window.addEventListener('load', loadStats);
+    </script>
+</body>
+</html>

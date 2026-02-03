@@ -1,5 +1,42 @@
-"models/*.gguf" 
-"*.gguf" 
-"*.model" 
-"*.gguf" 
-"__pycache__/" 
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Models
+models/*.gguf
+data/models/*.gguf
+*.gguf
+
+# Cache
+*.pkl
+chatbot_cache.pkl
+data/cache/*.pkl
+
+# Logs
+logs/
+*.log
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+.pytest_cache/
+htmlcov/
+.coverage
+dist/
+build/
+*.egg-info/
