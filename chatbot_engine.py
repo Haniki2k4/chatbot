@@ -292,8 +292,11 @@ Câu hỏi: {query}
             return_scores: Có trả về scores không
         
         Returns:
-            Câu trả lời hoặc (câu trả lời, scores) nếu return_scores=True
+            Câu trả lời hoặc (câu trả lời, scores, inference_time) 
         """
+        import time as time_module
+        inference_start_time = time_module.time()
+        
         if not user_query.strip():
             return "Vui lòng nhập câu hỏi."
         
@@ -331,9 +334,10 @@ Câu hỏi: {query}
         valid_indices = np.where(combined_scores >= threshold)[0]
         
         if len(valid_indices) == 0:
+            inference_time = time_module.time() - inference_start_time
             response = "Xin lỗi, tôi không tìm thấy thông tin phù hợp trong cơ sở dữ liệu. Bạn có thể hỏi về thông tin liên quan đến Bệnh viện Đức Giang."
             if return_scores:
-                return response, []
+                return response, [], inference_time
             return response
         
         # Lấy top_k best matches trong các kết quả đạt ngưỡng (cố định top_k=5)
@@ -399,7 +403,8 @@ Câu hỏi: {query}
                 final_response = "Xin lỗi, tôi không tìm thấy thông tin phù hợp."
         
         if return_scores:
-            return final_response, scores_info
+            inference_time = time_module.time() - inference_start_time
+            return final_response, scores_info, inference_time
         
         return final_response
     

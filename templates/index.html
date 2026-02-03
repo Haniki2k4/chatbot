@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🏥 Chatbot Bệnh viện Đức Giang</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=0.2">
 </head>
 <body>
     <div class="container">
@@ -67,8 +67,10 @@
 
     <!-- Loading Indicator -->
     <div class="loading-indicator" id="loadingIndicator" style="display: none;">
-        <div class="spinner"></div>
-        <p>Đang xử lý...</p>
+        <div class="loading-box">
+            <div class="spinner"></div>
+            <p>Đang suy luận<span class="dot-animation">.</span><span class="dot-animation">.</span><span class="dot-animation">.</span></p>
+        </div>
     </div>
 
     <script>
@@ -156,10 +158,14 @@
         function updateDebugInfo(data) {
             const debugInfo = document.getElementById('debugInfo');
             const responseTime = data.time ? (data.time * 1000).toFixed(0) : 'N/A';
+            const inferenceTime = data.inference_time ? (data.inference_time * 1000).toFixed(0) : 'N/A';
             
             debugInfo.innerHTML = `
                 <div class="debug-item">
-                    <strong>⏱️ Response Time:</strong> ${responseTime}ms
+                    <strong>⏱️ Thời gian suy luận:</strong> ${inferenceTime}ms
+                </div>
+                <div class="debug-item">
+                    <strong>⏱️ Thời gian xử lý tổng:</strong> ${responseTime}ms
                 </div>
                 <div class="debug-item">
                     <strong>📝 Query Preprocessed:</strong> ${data.query_processed || 'N/A'}

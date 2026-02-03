@@ -51,7 +51,7 @@ def get_page_text(url):
         text_parts.extend([d.get_text(" ", strip=True) for d in divs])
         return " ".join(text_parts)
     except Exception as e:
-        print(f"❌ Lỗi khi crawl {url}: {str(e)}")
+        print(f" X |  Lỗi khi crawl {url}: {str(e)}")
         return ""
 
 
@@ -81,7 +81,7 @@ def extract_article_links_from_page(url):
             article_links.add(href)
         return article_links
     except Exception as e:
-        print(f"⚠️  Lỗi khi lấy link bài báo từ {url}: {str(e)}")
+        print(f" X |   Lỗi khi lấy link bài báo từ {url}: {str(e)}")
         return set()
 
 
@@ -110,13 +110,13 @@ def extract_links_from_page(url, keyword_filter=None):
                 links.add(href)
         return links
     except Exception as e:
-        print(f"⚠️  Lỗi khi lấy link từ {url}: {str(e)}")
+        print(f" X |   Lỗi khi lấy link từ {url}: {str(e)}")
         return set()
 
 
 def get_intro_links(max_depth=2, save_text=False, file_counter=0):
     """Crawl trang giới thiệu (depth-first), save text nếu cần"""
-    print("🔍 Đang tìm kiếm các link giới thiệu...")
+    print(" Đang tìm kiếm các link giới thiệu...")
     all_links = set()
     visited = set()
     queue = list(INTRO_URLS)
@@ -131,7 +131,7 @@ def get_intro_links(max_depth=2, save_text=False, file_counter=0):
             continue
         visited.add(url)
         VISITED_URLS.add(url)
-        print(f"  🔗 Crawling: {url}")
+        print(f"  Crawling: {url}")
         text = get_page_text(url)
         if len(text) > 300:
             content_hash = get_content_hash(text)
@@ -142,25 +142,25 @@ def get_intro_links(max_depth=2, save_text=False, file_counter=0):
                     file_path = os.path.join(OUTPUT_DIR, f"duc_giang_{saved_count+1}.txt")
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(text)
-                    print(f"  ✅ Đã lưu: {file_path}")
+                    print(f"  Đã lưu: {file_path}")
                     saved_count += 1
             else:
-                print("  ⚠️  Nội dung trùng lặp, bỏ qua")
+                print("   X |   Nội dung trùng lặp, bỏ qua")
         article_links = extract_article_links_from_page(url)
         links = extract_links_from_page(url)
         for link in links:
             if link not in visited and link not in VISITED_URLS and depth.get(url, 0) < max_depth:
                 queue.append(link)
                 depth[link] = depth.get(url, 0) + 1
-    print(f"✅ Tìm thấy {len(all_links)} links giới thiệu")
+    print(f" Tìm thấy {len(all_links)} links giới thiệu")
     if save_text:
-        print(f"💾 Đã lưu {saved_count - file_counter} files")
+        print(f" Đã lưu {saved_count - file_counter} files")
     return list(all_links), article_links, saved_count
 
 
 def get_internal_links(save_text=False, file_counter=0):
     """Crawl trang chủ, save homepage text nếu cần"""
-    print("🔍 Đang tìm kiếm các link từ trang chủ...")
+    print(" Đang tìm kiếm các link từ trang chủ...")
     start = normalize_url(START_URL)
     saved_count = file_counter
     if start not in VISITED_URLS:
@@ -174,15 +174,15 @@ def get_internal_links(save_text=False, file_counter=0):
                     file_path = os.path.join(OUTPUT_DIR, f"duc_giang_{saved_count+1}.txt")
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(text)
-                    print(f"  ✅ Đã lưu trang chủ: {file_path}")
+                    print(f"  Đã lưu trang chủ: {file_path}")
                     saved_count += 1
     links = extract_links_from_page(start)
     article_links = extract_article_links_from_page(start)
-    print(f"✅ Tìm thấy {len(links)} links từ trang chủ")
+    print(f" Tìm thấy {len(links)} links từ trang chủ")
     return list(links), article_links, saved_count
 
 
-def crawl_and_save(min_files=25, target_chunks=300):
+def crawl_and_save(min_files):
     """Crawl và lưu dữ liệu raw text từ website"""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
@@ -192,12 +192,12 @@ def crawl_and_save(min_files=25, target_chunks=300):
     count = 0
     
     print("\n" + "="*60)
-    print("📚 BƯỚC 1: Crawl các trang giới thiệu")
+    print("Đang crawl các trang giới thiệu")
     print("="*60)
     intro_links, intro_articles, count = get_intro_links(max_depth=2, save_text=True, file_counter=count)
     
     print("\n" + "="*60)
-    print("🏠 BƯỚC 2: Crawl trang chủ")
+    print("Đang crawl trang chủ")
     print("="*60)
     site_links, site_articles, count = get_internal_links(save_text=True, file_counter=count)
 
@@ -210,9 +210,9 @@ def crawl_and_save(min_files=25, target_chunks=300):
 
     if count < min_files and all_links:
         print(f"\n" + "="*60)
-        print("📄 BƯỚC 3: Crawl các link còn lại")
+        print("Đang crawl các link còn lại")
         print("="*60)
-        print(f"📥 Bắt đầu crawl {len(all_links)} links còn lại...")
+        print(f" Bắt đầu crawl {len(all_links)} links còn lại...")
         
         for i, link in enumerate(all_links, 1):
             if count >= min_files:
@@ -225,13 +225,13 @@ def crawl_and_save(min_files=25, target_chunks=300):
             text = get_page_text(link)
 
             if len(text) < 100:
-                print("  ⚠️  Text quá ngắn (<100 ký tự), bỏ qua")
+                print(" X | Text quá ngắn (<100 ký tự), bỏ qua")
                 VISITED_URLS.add(link)
                 continue
 
             content_hash = get_content_hash(text)
             if content_hash in CONTENT_HASHES:
-                print("  ⚠️  Nội dung trùng lặp, bỏ qua")
+                print(" X | Nội dung trùng lặp, bỏ qua")
                 VISITED_URLS.add(link)
                 continue
             
@@ -241,22 +241,21 @@ def crawl_and_save(min_files=25, target_chunks=300):
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(text)
 
-            print(f"  ✅ Đã lưu: {file_path}")
+            print(f" Đã lưu: {file_path}")
             VISITED_URLS.add(link)
             count += 1
 
             time.sleep(0.5)
 
-    print(f"\n" + "="*60)
-    print(f"🎉 Hoàn tất crawling!")
-    print("="*60)
-    print(f"✅ Tổng số file: {count}")
-    print(f"📄 Từ giới thiệu: {len(intro_links)}")
-    print(f"🏠 Từ trang chủ: 1")
-    print(f"🔗 Links bổ sung: {len(all_links)}")
-    print(f"✔️ URLs đã visit: {len(VISITED_URLS)}")
-    print(f"🔐 Content hashes: {len(CONTENT_HASHES)}")
-    print("="*60)
+    print(f"\n" + "="*70)
+    print(f" Hoàn tất crawling!")
+    print("="*70)
+    print(f"- Tổng số file: {count}")
+    print(f"- Từ giới thiệu: {len(intro_links)}")
+    print(f"- Links bổ sung: {len(all_links)}")
+    print(f"- URLs đã visit: {len(VISITED_URLS)}")
+    print(f"- Content hashes: {len(CONTENT_HASHES)}")
+    print("="*70)
     
     return count
 
@@ -277,29 +276,27 @@ def save_chunks_to_file(chunks, output_file="duc_giang_chunks.txt"):
         for i, chunk in enumerate(chunks, 1):
             f.write(f"Chunk {i}:\n")
             f.write(chunk + "\n\n")  # chunk đã là string
-    print(f"\n💾 Đã lưu chunks vào: {output_file}")
+    print(f"\n Đã lưu chunks vào: {output_file}")
 
 
 def verify_data():
     """Kiểm tra số lượng file crawled"""
     if not os.path.exists(OUTPUT_DIR):
-        print(f"❌ Thư mục {OUTPUT_DIR} không tồn tại")
+        print(f" X |  Thư mục {OUTPUT_DIR} không tồn tại")
         return False
     txt_files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith('.txt')]
     if not txt_files:
-        print(f"❌ Không có file txt trong {OUTPUT_DIR}")
+        print(f" X |  Không có file txt trong {OUTPUT_DIR}")
         return False
-    print(f"\n📊 Thống kê dữ liệu:")
+    print(f"\n Thống kê dữ liệu:")
     print(f"  - Số file: {len(txt_files)}")
     texts = load_texts(OUTPUT_DIR)
     total_chars = sum(len(t) for t in texts)
     print(f"  - Tổng số ký tự: {total_chars:,}")
     print(f"  - Trung bình: {total_chars // len(txt_files):,} ký tự/file")
     if len(txt_files) < 10:
-        print(f"\n⚠️  CẢNH BÁO: Số file .txt ({len(txt_files)}) < 10!")
+        print(f"\n X |   CẢNH BÁO: Số file .txt ({len(txt_files)}) < 10!")
         return False
-    print(f"\n✅ Đạt yêu cầu: {len(txt_files)} files >= 10 files")
-    print(f"\n💡 Tiếp theo: Chạy chatbot")
     return True
 
 
@@ -308,21 +305,9 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding='utf-8')
     
     print("="*70)
-    print("🕷️  CRAWLER BỆNH VIỆN ĐỨC GIANG - V3")
-    print("="*70)
-    print("📋 Quy trình:")
-    print("  1. Crawl trang giới thiệu (depth=2)")
-    print("  2. Crawl trang chủ")
-    print("  3. Lưu raw text (preprocessing ở chatbot_engine)")
-    print("\n🔧 Tính năng:")
-    print("  - Normalize URLs")
-    print("  - Detect duplicate content (MD5 hash)")
-    print("  - Centralized tracking")
-    print("\n📋 Yêu cầu:")
-    print("  - Tối thiểu 10 files")
-    print("="*70)
+    print("--- CRAWLER BỆNH VIỆN ĐỨC GIANG - V3 ---")
     
-    num_files = crawl_and_save(min_files=310, target_chunks=300)
+    num_files = crawl_and_save(min_files=25)
     
     if num_files > 0:
         print("\n" + "="*70)
@@ -330,13 +315,12 @@ if __name__ == "__main__":
         print("="*70)
         
         if is_valid:
-            print("\n✅ Dữ liệu đã sẵn sàng!")
-            print(f"📂 Thư mục: {os.path.abspath(OUTPUT_DIR)}")
-            print(f"🔗 URLs crawled: {len(VISITED_URLS)}")
-            print(f"🔐 Unique content: {len(CONTENT_HASHES)}")
-            print("\n💡 Tiếp theo: python app.py")
+            print("\nDữ liệu đã sẵn sàng!")
+            print(f"- Thư mục: {os.path.abspath(OUTPUT_DIR)}")
+            print(f"- URLs crawled: {len(VISITED_URLS)}")
+            print(f"- Unique content: {len(CONTENT_HASHES)}")
         else:
-            print("\n⚠️  Dữ liệu chưa đủ yêu cầu!")
-            print("💡 Chạy lại crawler hoặc tăng min_files để crawl thêm")
+            print("\n X |   Dữ liệu chưa đủ yêu cầu!")
+            print(" Chạy lại crawler hoặc tăng min_files để crawl thêm")
     else:
-        print("\n❌ Không crawl được dữ liệu. Vui lòng kiểm tra lại.")
+        print("\n X |  Không crawl được dữ liệu. Vui lòng kiểm tra lại.")
