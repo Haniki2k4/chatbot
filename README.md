@@ -112,6 +112,7 @@ chatbot/
 ├── src/                           # Source code chính
 │   ├── __init__.py
 │   ├── chatbot_engine.py          # Engine chính
+│   ├── crawler.py          
 │   └── utils.py                   # Utility functions
 │
 ├── data/                          # Dữ liệu
@@ -237,7 +238,7 @@ pip install llama-cpp-python
 
 ### 3. Lỗi: "Không có file txt"
 - Đặt dữ liệu vào `data/raw/duc_giang_txt/`
-- Hoặc chạy `python scripts/crawler.py`
+- Hoặc chạy `python src/crawler.py`
 
 ### 4. Xóa cache cũ
 ```bash
